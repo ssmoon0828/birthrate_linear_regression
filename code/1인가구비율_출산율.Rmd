@@ -1,0 +1,175 @@
+# 1인가구비율과 출산율의 관계
+
+- 매년 1인가구비율(1인가구수/전체가구수)은 점점 증가하지만 출산율은 감소하고 있다.
+- 그렇다면 1인가구비율과 출산율은 선형적인 관계를 가지고 있을까?
+- 2000년부터 2018년까지의 서울시 데이터로 상관분석 및 회귀분석을 실시해보도록 하자.
+
+## 라이브러리 불러오기
+```{r}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+```
+- 엑셀데이터를 불러올 'readxl', 데이터 전처리에 쓰일 'dplyr', 데이터 시각화에 쓰일 'ggplot2', 인터렉티브 그래프를 만들어줄 'plotly' 라이브러리들을 불러와주자.
+
+## 데이터 불러오기
+```{r}
+raw_household <- read_excel('C:/Users/ssmoo/Desktop/년도별_가구원수_통계.xls')
+raw_birthrate <- read_excel('C:/Users/ssmoo/Desktop/년도별_출산_통계.xls',
+                       skip = 1)
+```
+데이터 | 적용범위
+-------|---------
+기간 | 2000 ~ 2018년
+장소 | 서울시
+출처 | [년도별_가구원수_통계](https://data.seoul.go.kr/dataList/datasetView.do?infId=10996&srvType=S&serviceKind=2), [년도별_출산__통계](https://data.seoul.go.kr/dataList/datasetView.do?infId=10104&srvType=S&serviceKind=2&currentPageNo=1&searchValue=&searchKey=null)
+
+
+## 데이터 복제
+```{r}
+household <- raw_household
+birthrate <- raw_birthrate
+```
+
+
+## 데이터 확인
+```{r}
+head(household)
+```
+- '계' 변수에 전체 가구수가, '1인 가구'변수에 1인가구수가 나타나있다. 이를 이용해 1인가구비율 변수를 파생시키고 '가구주의 연령별'에서 출산가능인구로 보는 50세 이하의 인구를 추출하여 집단요약을 할 것이다.
+
+```{r}
+head(birthrate)
+```
+- '자치구'변수의 서울특별시만을 추출하고 '합계출산율' 변수를 이용할 것이다.
+
+## 데이터 정제
+```{r}
+household <- rename(household,
+                    year = '기간',
+                    aged = '가구주의 연령별',
+                    total = '계',
+                    one_person_household = '1인 가구'
+                    )
+
+household <- household %>% 
+  filter(aged == '19세이하' | aged == '20~24세' | aged == '25~29세' | aged == '30~34세' | aged == '35~39세' | aged == '40~45세' | aged == '45~50세') %>% 
+  select(year, total, one_person_household) %>% 
+  group_by(year) %>% 
+  summarise(sum_total = sum(total),
+            sum_one_person_household = sum(one_person_household)) %>% 
+  mutate(one_person_ratio = sum_one_person_household / sum_total) %>% 
+  select(year, one_person_ratio)
+```
+
+```{r}
+birthrate <- rename(birthrate,
+                    year = '기간',
+                    ku = '자치구',
+                    total_birthrate = '합계출산율')
+
+birthrate <- birthrate %>%
+  filter(ku == '서울특별시') %>%
+  select(year, total_birthrate)
+```
+
+```{r}
+head(household)
+```
+
+```{r}
+head(birthrate)
+```
+- 'dplyr'패키지를 이용하여 데이터를 정제시켰다.
+
+```{r}
+df <- inner_join(household, birthrate, by = 'year')
+head(df)
+```
+- 년도를 기준삼아 두 데이터를 합쳤다.
+
+
+## 데이터 탐색
+
+### 년도별 1인가구비율과 출산율율 변화
+```{r}
+p1 <- ggplot() +
+  geom_line(data = df, aes(x = year, y = one_person_ratio, group = 1, col = '1인가구비율')) +
+  geom_line(data = df, aes(x = year, y = total_birthrate, group = 1, col = '출산율')) +
+  geom_point(data = df, aes(x = year, y = one_person_ratio, col = '1인가구비율')) +
+  geom_point(data = df, aes(x = year, y = total_birthrate, col = '출산율')) +
+  ggtitle('년도별 1인가구비율과 출산율율 변화') +
+  labs(x = '년도', y = '비율')
+
+ggplotly(p1)
+```
+
+- 년도별 1인가구비율 : 2000년부터 2018년까지 꾸준한 증가추세를 보이고있다.
+- 년도별 출산율 : 2000에 1.275로 가장 높고 2007년과 2012년 부근에 잠깐 높아지는 추세를 보이지만 꾸준히 감소 하고있다. 2015년부턴 출산율 1 미만으로 급격하게 하락하고 있는 추세이다.
+
+### 1인가구비율 vs 출산율 산점도
+```{r}
+p2 <- ggplot() +
+  geom_point(data = df, aes(x = one_person_ratio, y = total_birthrate, col = year)) +
+  ggtitle('1인가구비율 vs 출산율 산점도') +
+  labs(x = '1인가구비율(1인가구수/전체가구수)', y = '출산율')
+
+ggplotly(p2)
+```
+
+- x축에는 1인가구비율, y축에는 출산율, 년도를 색깔로 구분하였다.
+- 산점도의 표본들이 선형성을 어느정도 보인다.
+
+## 상관분석
+
+- 1인가구비율과 출산율의 상관관계에 대해 상관분석을 실시한다.
+- 귀무가설 : 1인가구비율과 출산율은 상관관계가 없다.
+- 대립가설 : 1인가구비율과 출산율은 상관관계가 있다.
+$$ H_{0} : \rho = 0 $$
+$$ H_{1} : \rho \neq 0 $$
+```{r}
+cor.test(df$one_person_ratio, df$total_birthrate)
+```
+- 상관분석 결과 두 변수의 상관관계는 약 -0.7으로 __강한 음의 상관관계__ 를 보였다.
+
+## 회귀분석
+
+- 두 변수간 상관관계가 짙은것으로 확인되었으니 두 변수간의 관계에 대하여 회귀분석을 실시해보자.
+- 독립변수는 1인가구비율, 종속변수는 출산율로 설정한다.
+
+### 회귀분석 모형
+```{r}
+bolm <- lm(df$total_birthrate ~ df$one_person_ratio)
+bolm
+```
+
+```{r}
+p3 <- ggplot() +
+  geom_point(data = df, aes(x = one_person_ratio, y = total_birthrate, col = year)) +
+  geom_abline(intercept = 1.318, slope = - 0.812, color = 'red') +
+  ggtitle('1인가구비율 vs 출산율 산점도 : 회귀선 추가') +
+  labs(x = '1인가구비율(1인가구수/전체가구수)', y = '출산율')
+
+ggplotly(p3)
+```
+
+- y절편의 계수는 1.318, 1인가구비율에 대한 계수는 -0.812로 나타났다.
+- 데이터에 대한 수식은 아래와 같이 나타낼 수 있다.
+$$ 출산율_{i} = 1.318 + (-0.812 * 1인가구비율_{i}) + \epsilon_{i} $$
+- 회귀모형은 아래와 같이 나타낼 수 있다.
+$$ 출산율 = -0.812 * 1인가구비율 + 1.318 $$
+- 1인가구비율이 1% 증가하면 출산율은 0.8% 감소한다
+
+### 회귀분석 검정
+
+- 유의수준 0.05하에 회귀분석 검정을 실시한다.
+- 귀무가설 : 회귀모형은 유의하다.
+- 대립가설 : 회귀모형은 유의하지않다.
+$$ H_{0} : \forall \beta_{i} = 0 $$
+$$ H_{1} : \exists \beta_{i} \neq 0 $$
+```{r}
+summary(bolm)
+```
+- y절편의 계수와 1인가구비율에 대한 계수의 p-value 값이 모두 유의수준인 0.05이하이므로 귀무가설을 기각하고 대립가설을 채택한다.
+- 회귀모형은 유의하다.
